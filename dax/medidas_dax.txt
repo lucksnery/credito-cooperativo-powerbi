@@ -1,0 +1,175 @@
+===============================================================================
+MEDIDAS DAX - Cooperativa Horizonte Sul
+===============================================================================
+Como usar: crie uma tabela dedicada so para medidas (New Table > nomeie
+"_Medidas", sem colunas de dados - so um placeholder) e cole cada bloco abaixo
+como uma New Measure separada dentro dela.
+
+Pre-requisito para todas as medidas de saldo/inadimplencia: a coluna
+calculada "Status Parcela" precisa existir em fato_parcela (criada no Power
+Query - ver docs/power_query_transformacoes.md). Ela classifica cada parcela
+em: "Paga em dia", "Paga com atraso", "A vencer", "Em atraso 1-30",
+"Em atraso 31-60", "Em atraso 61-90", "Em atraso 90+".
+
+Pre-requisito de modelagem: dim_calendario relacionada a fato_contrato por
+duas datas - data_contratacao (relacao ativa) e data_vencimento_final
+(relacao inativa, usada via USERELATIONSHIP). Ver docs/tabela_calendario.md.
+===============================================================================
+
+
+-------------------------------------------------------------------------------
+1. CARTEIRA E SALDO
+-------------------------------------------------------------------------------
+
+Saldo da Carteira =
+CALCULATE(
+    SUM ( fato_parcela[valor_parcela] ),
+    fato_parcela[Status Parcela] <> "Paga em dia" &&
+    fato_parcela[Status Parcela] <> "Paga com atraso"
+)
+-- Finalidade: valor total ainda nao pago (parcelas a vencer + em atraso),
+-- ou seja, o saldo devedor da carteira na data de corte.
+-- Justificativa: soma direta sobre a coluna "Status Parcela" evita recalcular
+-- data de corte em toda medida - a logica de "pago ou nao" ja foi resolvida
+-- uma unica vez no Power Query.
+
+
+Quantidade de Cooperados =
+DISTINCTCOUNT ( dim_cooperado[cooperado_id] )
+-- Finalidade: numero de cooperados unicos, apos a deduplicacao feita no
+-- Power Query (sem isso, a duplicidade proposital infla essa contagem).
+
+
+Contratos Ativos =
+CALCULATE (
+    DISTINCTCOUNT ( fato_parcela[contrato_id] ),
+    fato_parcela[Status Parcela] IN {
+        "A vencer", "Em atraso 1-30", "Em atraso 31-60",
+        "Em atraso 61-90", "Em atraso 90+"
+    }
+)
+-- Finalidade: conta contratos distintos que ainda tem pelo menos uma
+-- parcela em aberto na data de corte (nao totalmente liquidados).
+-- Justificativa: "ativo" e definido pela existencia de saldo devedor, nao
+-- por uma flag de status armazenada na base (a base nao tem essa flag de
+-- proposito - evita um atalho e obriga a definir a regra de negocio aqui).
+
+
+-------------------------------------------------------------------------------
+2. INADIMPLENCIA
+-------------------------------------------------------------------------------
+
+Saldo em Atraso 90+ =
+CALCULATE (
+    SUM ( fato_parcela[valor_parcela] ),
+    fato_parcela[Status Parcela] = "Em atraso 90+"
+)
+-- Finalidade: valor em atraso ha mais de 90 dias - o indicador de risco
+-- mais severo da carteira.
+
+
+% Inadimplencia 90+ =
+DIVIDE ( [Saldo em Atraso 90+], [Saldo da Carteira] )
+-- Finalidade: KPI central da analise. Mede a proporcao do saldo da carteira
+-- que esta em atraso severo (90+ dias).
+-- Justificativa do DIVIDE: evita erro de divisao por zero quando um filtro
+-- (ex.: um PA sem carteira no periodo) zera o saldo total.
+
+
+Saldo em Atraso 1-30 =
+CALCULATE ( SUM ( fato_parcela[valor_parcela] ), fato_parcela[Status Parcela] = "Em atraso 1-30" )
+
+Saldo em Atraso 31-60 =
+CALCULATE ( SUM ( fato_parcela[valor_parcela] ), fato_parcela[Status Parcela] = "Em atraso 31-60" )
+
+Saldo em Atraso 61-90 =
+CALCULATE ( SUM ( fato_parcela[valor_parcela] ), fato_parcela[Status Parcela] = "Em atraso 61-90" )
+-- Finalidade das 3 acima: abrir a inadimplencia por faixa para a pagina de
+-- detalhamento de risco (grafico de barras por faixa, por produto ou por PA).
+
+
+Saldo em Atraso Total =
+CALCULATE (
+    SUM ( fato_parcela[valor_parcela] ),
+    fato_parcela[Status Parcela] IN {
+        "Em atraso 1-30", "Em atraso 31-60", "Em atraso 61-90", "Em atraso 90+"
+    }
+)
+
+% Inadimplencia Total =
+DIVIDE ( [Saldo em Atraso Total], [Saldo da Carteira] )
+-- Finalidade: contraponto ao 90+. Mostra inadimplencia em qualquer faixa,
+-- util para contextualizar se o problema e so no 90+ ou comeca antes.
+
+
+-------------------------------------------------------------------------------
+3. VOLUME, TICKET E CONCESSAO
+-------------------------------------------------------------------------------
+
+Volume Concedido =
+SUM ( fato_contrato[Valor Contratado] )
+-- Finalidade: soma do valor contratado no periodo filtrado (usa a relacao
+-- ativa dim_calendario -> fato_contrato por data_contratacao).
+-- Pre-requisito: "Valor Contratado" e a coluna numerica criada no Power
+-- Query a partir do texto "15.000,50" original (ver catalogo de inconsistencias).
+
+
+Ticket Medio =
+DIVIDE ( [Volume Concedido], DISTINCTCOUNT ( fato_contrato[contrato_id] ) )
+-- Finalidade: valor medio por contrato concedido no periodo filtrado.
+
+
+Volume a Vencer (por Vencimento Final) =
+CALCULATE (
+    SUM ( fato_contrato[Valor Contratado] ),
+    USERELATIONSHIP ( dim_calendario[Data], fato_contrato[data_vencimento_final] )
+)
+-- Finalidade: mostra o volume de contratos agrupado pela data em que eles
+-- VENCEM (nao pela data em que foram contratados), usando a relacao inativa.
+-- Justificativa: responde "quanto da carteira atual vence em cada mes/ano",
+-- pergunta diferente de "quanto foi concedido em cada mes/ano" - e exatamente
+-- o motivo de existir uma segunda relacao com o calendario.
+
+
+-------------------------------------------------------------------------------
+4. CONCENTRACAO
+-------------------------------------------------------------------------------
+
+Saldo Top 10 Cooperados =
+VAR SaldoPorCooperado =
+    ADDCOLUMNS (
+        VALUES ( dim_cooperado[cooperado_id] ),
+        "SaldoCooperado", [Saldo da Carteira]
+    )
+VAR Top10 =
+    TOPN ( 10, SaldoPorCooperado, [SaldoCooperado] )
+RETURN
+    SUMX ( Top10, [SaldoCooperado] )
+
+% Concentracao Top 10 Cooperados =
+DIVIDE ( [Saldo Top 10 Cooperados], [Saldo da Carteira] )
+-- Finalidade: qual fracao do saldo da carteira esta concentrada nos 10
+-- cooperados com maior saldo devedor - mede risco de concentracao.
+-- Justificativa do padrao TOPN + ADDCOLUMNS + SUMX: precisamos calcular o
+-- saldo por cooperado em um contexto virtual (fora do agrupamento visual da
+-- tela) e depois somar so os 10 maiores - nao existe atalho de agregacao
+-- simples (SUM/COUNT) que resolva "top N" em DAX.
+
+
+-------------------------------------------------------------------------------
+5. EVOLUCAO TEMPORAL
+-------------------------------------------------------------------------------
+
+% Inadimplencia 90+ (Mes Anterior) =
+CALCULATE ( [% Inadimplencia 90+], DATEADD ( dim_calendario[Data], -1, MONTH ) )
+
+Var. Inadimplencia 90+ (M/M) =
+[% Inadimplencia 90+] - [% Inadimplencia 90+ (Mes Anterior)]
+-- Finalidade: variacao da inadimplencia 90+ em relacao ao mes anterior, em
+-- pontos percentuais - sustenta o titulo "a inadimplencia esta piorando" com
+-- um numero, nao so com a inclinacao do grafico.
+-- Justificativa do DATEADD: exige que dim_calendario seja uma tabela de
+-- datas contigua (sem buracos) marcada como "Table Date" no modelo - por
+-- isso a tabela calendario e gerada com CALENDAR() cobrindo o periodo
+-- completo, e nao e so uma lista de datas existentes nos fatos.
+===============================================================================

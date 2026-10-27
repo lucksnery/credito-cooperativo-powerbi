@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# Roteiro de apresentacao e demais notas privadas - nao vao para o repositorio publico.
+private/
