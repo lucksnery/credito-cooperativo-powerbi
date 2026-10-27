@@ -44,24 +44,65 @@ abaixo antes de abrir o `.pbix`.
 
 ## 2. Instalação do driver ODBC do SQLite
 
-1. Baixar o driver em [http://www.ch-werner.de/sqliteodbc/](http://www.ch-werner.de/sqliteodbc/)
-   — escolher o instalador **da mesma arquitetura do Power BI Desktop**
-   (32 ou 64 bits; o nome do arquivo costuma trazer `sqliteodbc_w64` ou
-   `_w32`).
-2. Instalar normalmente (Next, Next, Finish).
-3. Abrir o **Administrador de Fontes de Dados ODBC** — no Windows, buscar
-   por "ODBC Data Sources" e abrir a versão de **64 bits** (ou 32, igual ao
-   driver instalado).
-4. Aba **Drivers**: confirmar que "SQLite3 ODBC Driver" aparece na lista.
-5. Aba **User DSN** → **Add** → selecionar o driver SQLite3 → em
-   "Database Name", apontar para
-   `database/cooperativa_horizonte_sul.db` (caminho completo) → nomear o
-   DSN, por exemplo `cooperativa_horizonte_sul` → **Test** → deve retornar
-   sucesso. Esse nome de DSN é o que será usado na conexão do Power BI.
+1. Baixar o driver em [http://www.ch-werner.de/sqliteodbc/](http://www.ch-werner.de/sqliteodbc/).
+   Na lista "Current version" da página, o arquivo é **`sqliteodbc_w64.exe`**
+   (segundo link da lista) — é o pacote Win64, driver só de 64 bits. Como o
+   Power BI Desktop atual é 64 bits, é esse o arquivo certo; não existe
+   ambiguidade de arquitetura aqui (se um dia o Power BI Desktop instalado
+   for 32 bits, aí sim seria preciso achar o pacote `_w32` equivalente, mas
+   não é o caso padrão).
+2. **O navegador e/ou o Windows vão avisar que a conexão/arquivo não é
+   seguro** (cadeado de "não seguro" no navegador, porque o site é só HTTP,
+   sem HTTPS; possivelmente também um aviso do SmartScreen ao executar o
+   `.exe`, por ser um instalador pouco baixado e sem assinatura
+   reconhecida). Isso é esperado para este site: é a página oficial e
+   historicamente estável do driver ODBC de SQLite mantido por Christian
+   Werner, referenciada por documentação técnica de terceiros (inclusive
+   pela própria Microsoft em fóruns de suporte do Power BI) — não é sinal de
+   malware, é só o site não ter certificado HTTPS e o instalador não ter
+   assinatura digital corporativa. Mesmo assim, é sensato conferir o hash do
+   arquivo se quiser uma validação extra, e nunca baixar esse driver de um
+   link diferente deste.
+3. Instalar normalmente (Next, Next, Finish).
 
-> Se o teste falhar: a causa mais comum é arquitetura do driver diferente
-> da do Power BI Desktop (um é 64 bits, o outro 32). Reinstalar o driver na
-> arquitetura correta resolve.
+### 2.1 Conferir o driver instalado
+
+1. Menu Iniciar → digitar **"Fontes de Dados ODBC (64 bits)"** → abrir essa
+   versão, não a de 32 bits (o driver baixado no passo 1 é só de 64 bits).
+2. Aba **Drivers**: confirmar que **"SQLite3 ODBC Driver"** aparece na
+   lista. Se não aparecer, a instalação do passo 3 falhou ou foi para a
+   versão de 32 bits — reinstalar antes de seguir, sem pular para o DSN.
+
+### 2.2 Criar o DSN
+
+1. Na mesma janela, aba **DSN de Usuário** → **Adicionar** → selecionar
+   **SQLite3 ODBC Driver** → **Concluir**.
+2. **Data Source Name:** `cooperativa_sqlite` (é esse nome que será usado
+   na hora de conectar o Power BI, seção 6).
+3. **Database Name:** clicar em **Browse** e selecionar o arquivo
+   `cooperativa_horizonte_sul.db`, dentro da pasta `database/` do projeto —
+   não digitar o caminho à mão, para não arriscar erro de digitação.
+4. Deixar o resto como está → **OK**.
+
+> **O caminho do arquivo fica gravado no DSN no momento da criação.** Se a
+> pasta do projeto for movida ou renomeada depois, o DSN aponta para um
+> caminho que não existe mais e a conexão passa a falhar — nesse caso, é
+> preciso editar o DSN (mesma janela, **Configure**) e apontar de novo para
+> o novo local do `.db`. Por isso o arquivo deve já estar no local
+> definitivo antes de criar o DSN, e o projeto não deve ser movido depois
+> sem atualizar o DSN junto.
+
+**Confirmado nesta máquina:** driver "SQLite3 ODBC Driver" instalado em
+64 bits, e o DSN `cooperativa_sqlite` já criado apontando para
+`C:\Users\lucas\Documents\GitHub\credito-cooperativo-powerbi\database\cooperativa_horizonte_sul.db`
+— exatamente o arquivo do projeto, no caminho definitivo. Driver e DSN estão
+prontos; o que falta é o Power BI Desktop, que não está instalado nesta
+máquina (ver seção 1) — sem ele, não há como completar a seção 6
+(Conexão no Power BI) por aqui.
+
+> Se o teste de conexão falhar ao criar o DSN: a causa mais comum é
+> arquitetura do driver diferente da do Power BI Desktop (um é 64 bits, o
+> outro 32). Reinstalar o driver na arquitetura correta resolve.
 
 ## 3. Geração dos dados
 
@@ -118,7 +159,7 @@ mais crítica: duplicidade em `dim_cooperado`, sem a qual o relacionamento
 ## 6. Conexão no Power BI
 
 1. Power BI Desktop → **Obter Dados** → **Outros** → **ODBC**.
-2. Selecionar o DSN criado no passo 2 (`cooperativa_horizonte_sul`) → OK.
+2. Selecionar o DSN criado na seção 2.2 (`cooperativa_sqlite`) → OK.
 3. Na janela de prévia, marcar as 5 tabelas (`dim_cooperado`, `dim_pa`,
    `dim_produto`, `fato_contrato`, `fato_parcela`) → **Transformar Dados**
    (não "Carregar" direto — todo o tratamento acontece antes de carregar).
