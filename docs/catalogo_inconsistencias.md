@@ -6,14 +6,20 @@ como tratar → por quê**.
 
 ---
 
-### 1. CPF em formatos diferentes
-**Onde:** `dim_cooperado.cpf`
-**Problema:** mesmo CPF aparece como `"123.456.789-00"`, `"12345678900"` ou
-`" 123.456.789-00 "` (com espaços).
-**Tratamento:** `Text.Trim` + `Text.Remove` (removendo `.` e `-`) para obter
-uma versão só-números, mantida como coluna de chave de comparação/deduplicação.
-**Por quê:** CPF é usado para identificar duplicidade de cooperado (ver item 8);
-sem normalizar, dois formatos do mesmo CPF não são reconhecidos como iguais.
+### 1. Documento (CPF/CNPJ) em formatos diferentes
+**Onde:** `dim_cooperado.documento` (CPF para pessoa física, CNPJ para pessoa
+jurídica; coluna renomeada de `cpf` para `documento` para cobrir os dois casos).
+**Problema:** mesmo documento aparece como `"123.456.789-00"`, `"12345678900"`
+ou `" 123.456.789-00 "` (com espaços), e o CNPJ da pessoa jurídica tem a
+mesma variação de formatação.
+**Tratamento:** `Text.Trim` + `Text.Remove` (removendo `.`, `-` e `/`) para
+obter uma versão só-números, mantida como coluna de chave de comparação/
+deduplicação. O tamanho dessa versão (11 dígitos = CPF, 14 dígitos = CNPJ)
+também serve para inferir o tipo de pessoa de forma independente da coluna
+`tipo_pessoa` (que está suja de propósito, ver item 10 abaixo).
+**Por quê:** documento é usado para identificar duplicidade de cooperado
+(ver item 8); sem normalizar, dois formatos do mesmo documento não são
+reconhecidos como iguais.
 
 ### 2. Telefone em formatos diferentes
 **Onde:** `dim_cooperado.telefone`

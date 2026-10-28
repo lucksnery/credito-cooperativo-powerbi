@@ -10,7 +10,7 @@ Todas as tabelas abaixo existem no banco `database/cooperativa_horizonte_sul.db`
 |---|---|---|---|
 | cooperado_id | INTEGER | Identificador do cooperado | **Sem PRIMARY KEY/UNIQUE de propósito** — há 25 ids duplicados na tabela (ver catálogo de inconsistências) |
 | nome | TEXT | Nome completo | Caixa alta/baixa e espaços extras inconsistentes |
-| cpf | TEXT | CPF do cooperado | Fictício, formatos diferentes (com/sem pontuação) |
+| documento | TEXT | CPF (pessoa física) ou CNPJ (pessoa jurídica) | Fictício, formatos diferentes (com/sem pontuação) |
 | data_nascimento | TEXT | Data de nascimento | Formatos mistos: `YYYY-MM-DD`, `DD/MM/YYYY`, `DD-MM-YYYY` |
 | telefone | TEXT | Telefone de contato | Formatos mistos; ~5% nulo |
 | email | TEXT | E-mail | ~10% nulo |

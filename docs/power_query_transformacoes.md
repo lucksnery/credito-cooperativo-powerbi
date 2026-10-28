@@ -16,7 +16,7 @@ rápido que repetir clique por clique ao vivo.
 Passos (em "Transformar Dados"):
 1. `Trim` em `nome` e `cidade` (remove espaços nas pontas).
 2. `Capitalize Each Word` em `nome` e `cidade` (resolve caixa alta/baixa).
-3. Coluna customizada `CPF Normalizado` = só dígitos do CPF (para dedup).
+3. Coluna customizada `Documento Normalizado` = só dígitos do CPF/CNPJ (para dedup).
 4. Coluna customizada `Data Nascimento` convertendo os 3 formatos de data em
    tipo Date.
 5. `Remove Duplicates` em `cooperado_id` (mantém a primeira ocorrência) —
@@ -35,9 +35,9 @@ let
         {"nome", Text.Proper, type text},
         {"cidade", Text.Proper, type text}
     }),
-    ComCpfNormalizado = Table.AddColumn(Capitalizado, "CPF Normalizado",
-        each Text.Select([cpf], {"0".."9"}), type text),
-    ComDataNascimento = Table.AddColumn(ComCpfNormalizado, "Data Nascimento",
+    ComDocumentoNormalizado = Table.AddColumn(Capitalizado, "Documento Normalizado",
+        each Text.Select([documento], {"0".."9"}), type text),
+    ComDataNascimento = Table.AddColumn(ComDocumentoNormalizado, "Data Nascimento",
         each
             let
                 texto = Text.Trim([data_nascimento])
@@ -163,7 +163,7 @@ pré-requisito para os KPIs principais.)*
 
 | Consulta | Problema original | Resolvido por |
 |---|---|---|
-| dim_cooperado | nome/cidade sujos, datas mistas, CPF em formatos diferentes, ids duplicados | Trim + Proper + parser de data customizado + Remove Duplicates |
+| dim_cooperado | nome/cidade sujos, datas mistas, documento (CPF/CNPJ) em formatos diferentes, ids duplicados | Trim + Proper + parser de data customizado + Remove Duplicates |
 | dim_produto | categoria escrita de formas diferentes | Trim + Proper |
 | fato_contrato | valor monetário como texto BR | Replace "." e "," + conversão para number |
 | fato_parcela | status/atraso não existem nos dados crus | Coluna customizada com a regra de negócio completa |
