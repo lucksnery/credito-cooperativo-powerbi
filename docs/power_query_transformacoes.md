@@ -3,7 +3,7 @@
 Conexão: **Obter Dados → ODBC**, selecionando o DSN do SQLite (ver seção de
 pré-requisitos no README), modo **Importar**. Cada tabela do banco entra como
 uma consulta separada (`dim_cooperado`, `dim_pa`, `dim_produto`,
-`fato_contrato`, `fato_parcela`).
+`fato_contrato`, `fato_parcela`, `meta_mensal`).
 
 Abaixo, os passos de cada consulta na ordem em que devem ser aplicados, com o
 código M equivalente (Editor Avançado) para colar direto quando for mais
@@ -15,11 +15,15 @@ rápido que repetir clique por clique ao vivo.
 
 Passos (em "Transformar Dados"):
 1. `Trim` em `nome` e `cidade` (remove espaços nas pontas).
-2. `Capitalize Each Word` em `nome` e `cidade` (resolve caixa alta/baixa).
+2. `Capitalize Each Word` em `nome` e `cidade` (resolve caixa alta/baixa; em
+   `cidade` isso não resolve a falta de acento, ver nota abaixo).
 3. Coluna customizada `Documento Normalizado` = só dígitos do CPF/CNPJ (para dedup).
-4. Coluna customizada `Data Nascimento` convertendo os 3 formatos de data em
+4. Coluna customizada `Tipo Pessoa Padronizado` = `"PF"` ou `"PJ"`, resolvendo
+   as 6 variantes de escrita (`"PF"`, `"pf"`, `"Pessoa Fisica"`, `"PJ"`,
+   `"pj"`, `"Pessoa Juridica"`).
+5. Coluna customizada `Data Nascimento` convertendo os 3 formatos de data em
    tipo Date.
-5. `Remove Duplicates` em `cooperado_id` (mantém a primeira ocorrência) —
+6. `Remove Duplicates` em `cooperado_id` (mantém a primeira ocorrência) —
    **passo crítico**, sem ele a relação 1:N com `fato_contrato` não fecha.
 
 Código M (customizar conforme nomes exatos de coluna no seu Power Query):
@@ -37,7 +41,16 @@ let
     }),
     ComDocumentoNormalizado = Table.AddColumn(Capitalizado, "Documento Normalizado",
         each Text.Select([documento], {"0".."9"}), type text),
-    ComDataNascimento = Table.AddColumn(ComDocumentoNormalizado, "Data Nascimento",
+    ComTipoPessoaPadronizado = Table.AddColumn(ComDocumentoNormalizado, "Tipo Pessoa Padronizado",
+        each
+            let
+                texto = Text.Upper(Text.Trim([tipo_pessoa]))
+            in
+                if Text.StartsWith(texto, "PF") or Text.Contains(texto, "FISICA")
+                then "PF"
+                else "PJ",
+        type text),
+    ComDataNascimento = Table.AddColumn(ComTipoPessoaPadronizado, "Data Nascimento",
         each
             let
                 texto = Text.Trim([data_nascimento])
@@ -59,6 +72,46 @@ in
 > Nota para a apresentação: se preferirem ver passo a passo clicando em vez
 > do M colado, reproduza cada `Table.X` acima como um botão da faixa
 > "Transformar" — a lógica é a mesma, só a forma de chegar lá muda.
+
+> **`faixa_renda` e `porte` não precisam de transformação.** São
+> mutuamente exclusivos por desenho: todo cooperado PF tem `faixa_renda`
+> preenchida e `porte` nulo, todo PJ tem o inverso. Carregar como estão;
+> usar `Tipo Pessoa Padronizado` para decidir qual dos dois exibir num
+> visual (ex.: medida condicional, não transformação de tabela).
+
+> **Acentos em `cidade` não são tratados aqui de propósito.** Duas cidades
+> da base ("São Bento do Vale", "Águas Claras do Sul") perdem o acento em
+> parte dos registros. `Text.Proper` não devolve o acento que já foi
+> removido na origem — isso exigiria uma tabela de mapeamento cidade→forma
+> canônica. Fica fora de escopo porque não afeta nenhuma medida (cidade do
+> cooperado não entra em relacionamento nem em cálculo, só em texto livre
+> de apoio); documentado aqui para não parecer esquecimento.
+
+---
+
+## dim_pa
+
+Nenhuma sujeira foi plantada nesta tabela (nome, cidade, uf e regiao vêm
+limpos da origem). O único passo é garantir os tipos corretos antes de
+marcar a tabela como dimensão no modelo.
+
+```m
+let
+    Origem = dim_pa,
+    TiposDeColuna = Table.TransformColumnTypes(Origem, {
+        {"pa_id", Int64.Type},
+        {"nome_pa", type text},
+        {"cidade", type text},
+        {"uf", type text},
+        {"regiao", type text}
+    })
+in
+    TiposDeColuna
+```
+
+> `regiao` agrupa os 8 PAs em 4 regionais. Serve de nível acima de PA em
+> hierarquias de visual (ex.: matriz Regional → PA), não precisa de
+> tratamento porque não tem variação de escrita.
 
 ---
 
@@ -83,6 +136,9 @@ in
 1. Coluna customizada `Valor Contratado` — converte o texto BR
    (`"15.000,50"`) em número.
 2. Tipos: `data_contratacao` e `data_vencimento_final` → Date.
+3. Coluna customizada `Garantia Padronizada` — resolve as 6 variantes de
+   escrita de `garantia` (`"Com garantia"`, `"COM GARANTIA"`,
+   `"com garantia "`, `"Sem garantia"`, `"SEM GARANTIA"`, `" sem Garantia"`).
 
 ```m
 let
@@ -97,10 +153,28 @@ let
     TiposDeData = Table.TransformColumnTypes(ComValorContratado, {
         {"data_contratacao", type date},
         {"data_vencimento_final", type date}
-    })
+    }),
+    ComGarantiaPadronizada = Table.AddColumn(TiposDeData, "Garantia Padronizada",
+        each
+            if Text.StartsWith(Text.Upper(Text.Trim([garantia])), "COM")
+            then "Com garantia"
+            else "Sem garantia",
+        type text)
 in
-    TiposDeData
+    ComGarantiaPadronizada
 ```
+
+> **`score_risco` e `nivel_risco` não precisam de transformação de
+> limpeza** — já chegam como número (0-1000) e letra (A-E). O único ponto
+> de atenção é `nivel_risco` nulo em 60 contratos (~2%): é ausência real de
+> classificação, não um erro de escrita, então não deve ser preenchido com
+> uma letra "média". Em medidas de taxa de inadimplência por nível de
+> risco, os nulos ficam de fora do agrupamento por nível (comportamento
+> padrão do Power BI) e aparecem separados se for necessário expor a
+> contagem de contratos sem classificação. Se o visual pedir um rótulo
+> em vez de branco, usar uma coluna só de exibição:
+> `Table.ReplaceValue(ComGarantiaPadronizada, null, "Sem classificação", Replacer.ReplaceValue, {"nivel_risco"})`
+> — aplicada em uma coluna separada, nunca sobrescrevendo `nivel_risco`.
 
 ---
 
@@ -159,11 +233,44 @@ pré-requisito para os KPIs principais.)*
 
 ---
 
+## meta_mensal
+
+Tabela de metas, uma linha por mês × PA (36 × 8 = 288 linhas). `mes` já
+vem no banco como texto ISO sempre no primeiro dia do mês (ex.:
+`"2026-09-01"`), sem variação de formato — só precisa virar tipo Date.
+
+```m
+let
+    Origem = meta_mensal,
+    TiposDeColuna = Table.TransformColumnTypes(Origem, {
+        {"mes", type date},
+        {"pa_id", Int64.Type},
+        {"meta_saldo", type number},
+        {"meta_volume_concedido", type number},
+        {"teto_inadimplencia_90", type number}
+    })
+in
+    TiposDeColuna
+```
+
+> **`meta_saldo` é meta de estoque, `meta_volume_concedido` é meta de
+> fluxo** — não trocar uma pela outra em medida nenhuma (detalhe de
+> modelagem, não de Power Query, mas registrado aqui porque nasce nesta
+> consulta): `meta_saldo` só pode ser comparada ao saldo realizado no
+> mesmo mês (nunca somada ao longo de vários meses); `meta_volume_concedido`
+> pode ser somada ao longo dos meses e comparada ao volume originado no
+> período. A forma como esta tabela se relaciona com `dim_calendario`
+> (ela é mensal, o calendário é diário) é decidida na etapa 4, não aqui.
+
+---
+
 ## Resumo do que cada transformação resolve
 
 | Consulta | Problema original | Resolvido por |
 |---|---|---|
-| dim_cooperado | nome/cidade sujos, datas mistas, documento (CPF/CNPJ) em formatos diferentes, ids duplicados | Trim + Proper + parser de data customizado + Remove Duplicates |
+| dim_cooperado | nome/cidade sujos, datas mistas, documento (CPF/CNPJ) em formatos diferentes, tipo_pessoa em 6 variantes de escrita, ids duplicados | Trim + Proper + coluna de tipo de pessoa padronizado + parser de data customizado + Remove Duplicates |
+| dim_pa | nenhum (tabela limpa) | só ajuste de tipos |
 | dim_produto | categoria escrita de formas diferentes | Trim + Proper |
-| fato_contrato | valor monetário como texto BR | Replace "." e "," + conversão para number |
+| fato_contrato | valor monetário como texto BR, garantia em 6 variantes de escrita, nivel_risco nulo em parte dos contratos | Replace "." e "," + conversão para number; coluna de garantia padronizada; nulo mantido (ausência real, não erro) |
 | fato_parcela | status/atraso não existem nos dados crus | Coluna customizada com a regra de negócio completa |
+| meta_mensal | nenhuma sujeira, só tipo de dado | ajuste de tipos (mes → Date) |
